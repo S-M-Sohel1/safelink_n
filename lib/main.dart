@@ -18,19 +18,29 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase (ensure you have added the native config files)
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  } else {
-    await Firebase.app(); // reuse existing app to avoid duplicate-app error
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+  } catch (e) {
+    debugPrint('Firebase initialization error: $e');
   }
 
   // Register background handler and request permissions only on Android/iOS
-  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // Request notification permissions on iOS
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
     }
   } else {
     debugPrint('Firebase Messaging skipped on this platform');
