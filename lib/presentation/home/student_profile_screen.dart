@@ -5,9 +5,14 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../auth/controllers/profile_controller.dart';
 import 'controllers/alert_controller.dart';
 import 'alert_notifications_screen.dart';
+import '../../core/services/shake_detection_service.dart';
+import '../../core/services/volume_button_sos_service.dart';
+import '../../core/services/sms_escalation_service.dart';
+import '../../core/services/call_escalation_service.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({Key? key}) : super(key: key);
@@ -16,7 +21,8 @@ class StudentProfileScreen extends StatefulWidget {
   State<StudentProfileScreen> createState() => _StudentProfileScreenState();
 }
 
-class _StudentProfileScreenState extends State<StudentProfileScreen> with TickerProviderStateMixin {
+class _StudentProfileScreenState extends State<StudentProfileScreen>
+    with TickerProviderStateMixin {
   bool _sending = false;
   String _locationStatus = 'Finding your location...';
   int _currentIndex = 0;
@@ -72,16 +78,83 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     _initializeLocation();
     // Initialize real-time listener for alerts
     AlertController.instance.initializeRealtimeListener();
+    // Set auth token for backend communication
+    _setAuthToken();
+    // Start volume button SOS detection (FR12)
+    VolumeButtonSosService.instance.startListening();
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..repeat(reverse: true);
+
+    // Set SMS escalation context (needs context, so delayed)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        SmsEscalationService.instance.setContext(context);
+        CallEscalationService.instance.setContext(context);
+      }
+    });
+  }
+
+  /// Set Firebase auth token for AlertController
+  Future<void> _setAuthToken() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final token = await user.getIdToken();
+        if (token != null) {
+          AlertController.instance.setAuthToken(token);
+          print('✅ Auth token set for AlertController');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error setting auth token: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    print('🔍 StudentProfileScreen didChangeDependencies called');
+    print(
+      '   Shake service already listening: ${ShakeDetectionService.instance.isListening}',
+    );
+
+    // Initialize shake detection for students (FR11, FR25)
+    if (!ShakeDetectionService.instance.isListening) {
+      print('✅ Initializing shake detection for student');
+      // Use addPostFrameCallback to ensure context is fully built
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ShakeDetectionService.instance.startListening(context: context);
+          print('✅ Shake detection initialized and started');
+        } else {
+          print('⚠️ Widget not mounted, cannot start shake detection');
+        }
+      });
+    } else {
+      print('ℹ️ Shake detection already listening, skipping initialization');
+    }
   }
 
   @override
   void dispose() {
     _liveLocationSub?.cancel();
     _pulseController.dispose();
+    // Stop shake detection when leaving student profile
+    ShakeDetectionService.instance.stopListening();
+    print('✅ Shake detection stopped on dispose');
+    // Stop volume button SOS detection
+    VolumeButtonSosService.instance.stopListening();
+    print('✅ Volume button SOS stopped on dispose');
+    // Clear SMS escalation context and cancel timers
+    SmsEscalationService.instance.clearContext();
+    SmsEscalationService.instance.cancelAllEscalations();
+    CallEscalationService.instance.clearContext();
+    CallEscalationService.instance.cancelAllEscalations();
+    print('✅ SMS and Call escalation services stopped on dispose');
+    print('✅ SMS escalation monitoring stopped on dispose');
     super.dispose();
   }
 
@@ -101,7 +174,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: const [
               Icon(Icons.location_city, color: Color(0xFF1E88E5)),
@@ -125,7 +200,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: const Color(0xFF1E88E5).withOpacity(0.1),
-                      child: const Icon(Icons.business, color: Color(0xFF1E88E5)),
+                      child: const Icon(
+                        Icons.business,
+                        color: Color(0xFF1E88E5),
+                      ),
                     ),
                     title: Text(
                       building,
@@ -161,7 +239,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               const Icon(Icons.stairs, color: Color(0xFF1E88E5)),
@@ -259,73 +339,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
           ),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
-    }
-  }
-
-  Future<void> _saveCurrentLocation() async {
-    setState(() => _locationStatus = 'Getting your location...');
-    
-    try {
-      // Check and request permission
-      var status = await Permission.location.status;
-      if (!status.isGranted) {
-        status = await Permission.location.request();
-        if (!status.isGranted) {
-          if (mounted) {
-            setState(() => _locationStatus = 'Location permission denied');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Location permission is required to save location')),
-            );
-          }
-          return;
-        }
-      }
-
-      // Get current position
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.bestForNavigation,
-      );
-
-      // Format location string
-      final locationStr = 'Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}';
-      
-      // Save to profile controller
-      ProfileController.instance.setLocation(
-        location: locationStr,
-        lat: position.latitude,
-        lon: position.longitude,
-      );
-
-      if (mounted) {
-        setState(() => _locationStatus = locationStr);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: const [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 10),
-                Text('Location saved successfully!'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _locationStatus = 'Failed to get location');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
@@ -340,14 +358,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
   Future<void> _showMapOptions() async {
     double? latitude;
     double? longitude;
-    
+
     // Always try to get current GPS location for accurate position
     try {
       var locationStatus = await Permission.location.status;
       if (!locationStatus.isGranted) {
         locationStatus = await Permission.location.request();
       }
-      
+
       if (locationStatus.isGranted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -358,7 +376,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
             ),
           );
         }
-        
+
         // Get current position with best accuracy
         final position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.best,
@@ -366,7 +384,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
         );
         latitude = position.latitude;
         longitude = position.longitude;
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -403,10 +421,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       latitude = 22.8719;
       longitude = 91.0987;
     }
-    
+
     // Open in Google Maps (will always have a location now)
-    final googleMapsUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$latitude,$longitude');
-    
+    final googleMapsUrl = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
+    );
+
     try {
       if (await canLaunchUrl(googleMapsUrl)) {
         await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
@@ -444,7 +464,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
             Text('Confirm Emergency'),
           ],
         ),
-        content: const Text('Send emergency alert to your guardians and campus security?'),
+        content: const Text(
+          'Send emergency alert to your guardians and campus security?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c, false),
@@ -454,7 +476,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
             onPressed: () => Navigator.pop(c, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: const Text('Send Alert'),
           ),
@@ -462,7 +486,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       ),
     );
     if (confirmed != true) return;
-    
+
     setState(() => _sending = true);
 
     // Prepare variables outside try so they are in scope for Firestore updates
@@ -521,7 +545,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       );
 
       // Get the alert ID from the most recent alert
-          alertId = AlertController.instance.alerts.isNotEmpty
+      alertId = AlertController.instance.alerts.isNotEmpty
           ? AlertController.instance.alerts.last.id
           : '';
 
@@ -532,13 +556,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
               .collection('proctorial_alerts')
               .doc(alertId)
               .update({
-            'liveLatitude': latitude,
-            'liveLongitude': longitude,
-            'liveLocationName': locString,
-            'building': _selectedBuilding,
-            'floor': _selectedFloor,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+                'liveLatitude': latitude,
+                'liveLongitude': longitude,
+                'liveLocationName': locString,
+                'building': _selectedBuilding,
+                'floor': _selectedFloor,
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
           _startLiveLocationUpdates(alertId);
         } catch (e) {
           print('⚠️ Could not update live location: $e');
@@ -561,7 +585,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
 
     setState(() => _sending = false);
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -589,32 +613,38 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       distanceFilter: 10, // update after ~10m movement for better tracking
     );
 
-    _liveLocationSub = Geolocator.getPositionStream(locationSettings: locationSettings)
-        .listen((pos) async {
-      try {
-        final locString = await _reverseGeocode(pos.latitude, pos.longitude);
+    _liveLocationSub =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (pos) async {
+            try {
+              final locString = await _reverseGeocode(
+                pos.latitude,
+                pos.longitude,
+              );
 
-        await FirebaseFirestore.instance
-            .collection('proctorial_alerts')
-            .doc(alertId)
-            .update({
-          'liveLatitude': pos.latitude,
-          'liveLongitude': pos.longitude,
-          'liveLocationName': locString,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+              await FirebaseFirestore.instance
+                  .collection('proctorial_alerts')
+                  .doc(alertId)
+                  .update({
+                    'liveLatitude': pos.latitude,
+                    'liveLongitude': pos.longitude,
+                    'liveLocationName': locString,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  });
 
-        if (mounted) {
-          setState(() {
-            _locationStatus = locString;
-          });
-        }
-      } catch (e) {
-        print('⚠️ Live location stream update failed: $e');
-      }
-    }, onError: (e) {
-      print('⚠️ Live location stream error: $e');
-    });
+              if (mounted) {
+                setState(() {
+                  _locationStatus = locString;
+                });
+              }
+            } catch (e) {
+              print('⚠️ Live location stream update failed: $e');
+            }
+          },
+          onError: (e) {
+            print('⚠️ Live location stream error: $e');
+          },
+        );
   }
 
   Future<String> _reverseGeocode(double lat, double lon) async {
@@ -625,7 +655,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
         final parts = [
           if (p.name != null && p.name!.isNotEmpty) p.name,
           if (p.locality != null && p.locality!.isNotEmpty) p.locality,
-          if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty) p.administrativeArea,
+          if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty)
+            p.administrativeArea,
           if (p.country != null && p.country!.isNotEmpty) p.country,
         ];
         if (parts.isNotEmpty) {
@@ -643,7 +674,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F1115) : const Color(0xFFE9F4FF),
+      backgroundColor: isDark
+          ? const Color(0xFF0F1115)
+          : const Color(0xFFE9F4FF),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -768,21 +801,27 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                   ),
                 ),
               ),
-              
+
               // Welcome message section
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 14.0,
+                ),
                 child: ListenableBuilder(
                   listenable: ProfileController.instance,
                   builder: (context, child) {
-                    final isDark = Theme.of(context).brightness == Brightness.dark;
+                    final isDark =
+                        Theme.of(context).brightness == Brightness.dark;
                     return Column(
                       children: [
                         Text(
                           'Welcome back,',
                           style: TextStyle(
                             fontSize: 14,
-                            color: isDark ? Colors.white70 : const Color(0xFF6D6D6D),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF6D6D6D),
                             fontWeight: FontWeight.w400,
                           ),
                         ),
@@ -792,7 +831,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF1A1A1A),
                             letterSpacing: 0.2,
                           ),
                         ),
@@ -802,7 +843,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                 ),
               ),
               const SizedBox(height: 28),
-              
+
               // Emergency section
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -816,7 +857,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF1A1A1A),
                             letterSpacing: 0.3,
                           ),
                         ),
@@ -831,7 +874,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 40),
-                        
+
                         // Enhanced SOS Button with animation
                         GestureDetector(
                           onTap: _sending ? null : _sendSos,
@@ -843,12 +886,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(0xFFFF1744).withOpacity(0.4 + _pulseController.value * 0.3),
-                                      blurRadius: 40 + _pulseController.value * 20,
-                                      spreadRadius: 5 + _pulseController.value * 15,
+                                      color: const Color(0xFFFF1744)
+                                          .withOpacity(
+                                            0.4 + _pulseController.value * 0.3,
+                                          ),
+                                      blurRadius:
+                                          40 + _pulseController.value * 20,
+                                      spreadRadius:
+                                          5 + _pulseController.value * 15,
                                     ),
                                     BoxShadow(
-                                      color: const Color(0xFFFF1744).withOpacity(0.2),
+                                      color: const Color(
+                                        0xFFFF1744,
+                                      ).withOpacity(0.2),
                                       blurRadius: 60,
                                       spreadRadius: 20,
                                     ),
@@ -885,12 +935,16 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                                             width: 65,
                                             height: 65,
                                             child: CircularProgressIndicator(
-                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Colors.white,
+                                                  ),
                                               strokeWidth: 5,
                                             ),
                                           )
                                         : Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: const [
                                               Icon(
                                                 Icons.warning_rounded,
@@ -927,7 +981,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                 ),
               ),
               const SizedBox(height: 32),
-              
+
               // Location section with enhanced design
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -935,7 +989,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                   builder: (ctx) {
                     final isDark = Theme.of(ctx).brightness == Brightness.dark;
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 20,
+                      ),
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
                         borderRadius: BorderRadius.circular(18),
@@ -962,7 +1019,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF4CAF50).withOpacity(0.28),
+                                  color: const Color(
+                                    0xFF4CAF50,
+                                  ).withOpacity(0.28),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -983,7 +1042,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                                   'Your current address',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: isDark ? Colors.white60 : const Color(0xFF9E9E9E),
+                                    color: isDark
+                                        ? Colors.white60
+                                        : const Color(0xFF9E9E9E),
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: 0.2,
                                   ),
@@ -993,7 +1054,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                                   _locationStatus,
                                   style: TextStyle(
                                     fontSize: 15,
-                                    color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF1A1A1A),
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 0.1,
                                   ),
@@ -1028,51 +1091,65 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
               ],
             ),
             child: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          items: [
-            BottomNavigationBarItem(
-              icon: _buildNavIcon(Icons.home_rounded, 0, Colors.redAccent),
-              label: '',
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              items: [
+                BottomNavigationBarItem(
+                  icon: _buildNavIcon(Icons.home_rounded, 0, Colors.redAccent),
+                  label: '',
+                ),
+                BottomNavigationBarItem(
+                  icon: _buildNavIcon(
+                    Icons.gps_fixed_rounded,
+                    1,
+                    Colors.blueAccent,
+                  ),
+                  label: '',
+                ),
+                BottomNavigationBarItem(
+                  icon: _buildNavIcon(
+                    Icons.map_rounded,
+                    2,
+                    Colors.deepPurpleAccent,
+                  ),
+                  label: '',
+                ),
+                BottomNavigationBarItem(
+                  icon: _buildNavIcon(
+                    Icons.notifications_rounded,
+                    3,
+                    Colors.deepOrangeAccent,
+                  ),
+                  label: '',
+                ),
+              ],
+              currentIndex: _currentIndex,
+              selectedItemColor: const Color(0xFF1E88E5),
+              unselectedItemColor: const Color(0xFF9E9E9E),
+              selectedFontSize: 11.5,
+              unselectedFontSize: 10.5,
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+              unselectedLabelStyle: const TextStyle(
+                fontWeight: FontWeight.w500,
+              ),
+              onTap: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+                if (index == 1) {
+                  // Set Location button tapped
+                  _showBuildingFloorSelection();
+                } else if (index == 2) {
+                  // View Map button tapped
+                  _showMapOptions();
+                } else if (index == 3) {
+                  // Open notifications - Check if user is proctor
+                  _openAlertsScreen();
+                }
+              },
             ),
-            BottomNavigationBarItem(
-              icon: _buildNavIcon(Icons.gps_fixed_rounded, 1, Colors.blueAccent),
-              label: '',
-            ),
-            BottomNavigationBarItem(
-              icon: _buildNavIcon(Icons.map_rounded, 2, Colors.deepPurpleAccent),
-              label: '',
-            ),
-            BottomNavigationBarItem(
-              icon: _buildNavIcon(Icons.notifications_rounded, 3, Colors.deepOrangeAccent),
-              label: '',
-            ),
-          ],
-          currentIndex: _currentIndex,
-          selectedItemColor: const Color(0xFF1E88E5),
-          unselectedItemColor: const Color(0xFF9E9E9E),
-          selectedFontSize: 11.5,
-          unselectedFontSize: 10.5,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-            if (index == 1) {
-              // Set Location button tapped
-              _showBuildingFloorSelection();
-            } else if (index == 2) {
-              // View Map button tapped
-              _showMapOptions();
-            } else if (index == 3) {
-              // Open notifications - Check if user is proctor
-              _openAlertsScreen();
-            }
-          },
-        ),
-      );
+          );
         },
       ),
     );
@@ -1102,11 +1179,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
           ),
         ],
       ),
-      child: Icon(
-        icon,
-        color: Colors.white,
-        size: 22,
-      ),
+      child: Icon(icon, color: Colors.white, size: 22),
     );
 
     Widget iconWithBadge = circle;
@@ -1124,7 +1197,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                   top: -2,
                   right: -2,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.redAccent,
                       borderRadius: BorderRadius.circular(10),
@@ -1164,7 +1240,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
               style: TextStyle(
                 fontSize: isSelected ? 11.5 : 10.5,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? color : (isDark ? Colors.white54 : const Color(0xFF6D6D6D)),
+                color: isSelected
+                    ? color
+                    : (isDark ? Colors.white54 : const Color(0xFF6D6D6D)),
               ),
             );
           },

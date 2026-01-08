@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import '../../../data/models/alert_model.dart';
 import '../../../data/services/alert_service.dart';
+import '../../../core/services/sms_escalation_service.dart';
+import '../../../core/services/call_escalation_service.dart';
 
 class AlertController extends ChangeNotifier {
   static final AlertController instance = AlertController._internal();
@@ -11,7 +13,7 @@ class AlertController extends ChangeNotifier {
 
   final List<AlertModel> _alerts = [];
   final List<AlertNotification> _notifications = [];
-  
+
   int _unreadNotificationCount = 0;
   String? _authToken; // Store auth token for API calls
   StreamSubscription<QuerySnapshot>? _alertsSubscription; // Real-time listener
@@ -35,7 +37,7 @@ class AlertController extends ChangeNotifier {
 
     // Cancel previous subscription if exists (for new login after logout)
     _alertsSubscription?.cancel();
-    
+
     // Clear previous user's data before loading new user's data
     _alerts.clear();
     _notifications.clear();
@@ -48,22 +50,58 @@ class AlertController extends ChangeNotifier {
         .collection('alerts')
         .orderBy('timestamp', descending: true)
         .snapshots()
-        .listen((snapshot) {
-          print('📦 Alert snapshot received with ${snapshot.docs.length} documents');
-          
-          _alerts.clear();
-          for (var doc in snapshot.docs) {
-            final alert = AlertModel.fromJson(doc.data());
-            _alerts.add(alert);
-            print('📋 Alert loaded: ${alert.id} (status: ${alert.status.name})');
-          }
-          
-          print('✅ Real-time alerts updated: ${_alerts.length} alerts loaded');
-          notifyListeners();
-        }, onError: (e) {
-          print('❌ Error listening to alerts: $e');
-        });
-    
+        .listen(
+          (snapshot) {
+            print(
+              '📦 Alert snapshot received with ${snapshot.docs.length} documents',
+            );
+
+            // Track old statuses to detect changes
+            final oldStatuses = Map.fromEntries(
+              _alerts.map((alert) => MapEntry(alert.id, alert.status)),
+            );
+
+            _alerts.clear();
+            for (var doc in snapshot.docs) {
+              final alert = AlertModel.fromJson(doc.data());
+              _alerts.add(alert);
+              print(
+                '📋 Alert loaded: ${alert.id} (status: ${alert.status.name})',
+              );
+
+              // Check if status changed from pending to accepted/rejected
+              final oldStatus = oldStatuses[alert.id];
+              if (oldStatus == AlertStatus.pending &&
+                  (alert.status == AlertStatus.accepted ||
+                      alert.status == AlertStatus.rejected)) {
+                print(
+                  '🎯 Alert ${alert.id} status changed to ${alert.status.name} - cancelling SMS and Call escalations',
+                );
+                SmsEscalationService.instance.cancelEscalation(alert.id);
+                CallEscalationService.instance.cancelEscalation(alert.id);
+              }
+              // Also cancel if alert is already accepted/rejected on first load
+              else if (oldStatus == null &&
+                  (alert.status == AlertStatus.accepted ||
+                      alert.status == AlertStatus.rejected)) {
+                print(
+                  '🎯 Alert ${alert.id} already ${alert.status.name} on load - cancelling SMS and Call escalations',
+                );
+                SmsEscalationService.instance.cancelEscalation(alert.id);
+                CallEscalationService.instance.cancelEscalation(alert.id);
+              }
+            }
+
+            print(
+              '✅ Real-time alerts updated: ${_alerts.length} alerts loaded',
+            );
+            notifyListeners();
+          },
+          onError: (e) {
+            print('❌ Error listening to alerts: $e');
+          },
+        );
+
     // No longer listen to Firestore notifications - only show "alert sent" notifications
     print('✅ Alert listener initialized (notifications disabled)');
   }
@@ -92,8 +130,10 @@ class AlertController extends ChangeNotifier {
       // Clear local notifications
       _notifications.clear();
       _unreadNotificationCount = 0;
-      
-      print('✅ All notifications cleared: ${notificationDocs.docs.length} deleted');
+
+      print(
+        '✅ All notifications cleared: ${notificationDocs.docs.length} deleted',
+      );
       notifyListeners();
     } catch (e) {
       print('❌ Error clearing notifications: $e');
@@ -146,10 +186,13 @@ class AlertController extends ChangeNotifier {
       );
 
       _alerts.add(alert);
-      
+
       // Save to local storage
       await _saveAlertToStorage(alert);
-      
+
+      // Schedule SMS escalation after 60 seconds
+      SmsEscalationService.instance.scheduleEscalation(alert.id);
+
       // Create a "sent successfully" notification for the student (local only, not saved to Firestore)
       _addNotification(
         alertId: alert.id,
@@ -157,7 +200,7 @@ class AlertController extends ChangeNotifier {
         respondedByName: 'SafeLink System',
         saveToFirestore: false, // Don't save to Firestore to avoid duplicates
       );
-      
+
       // Send to backend if auth token is available
       if (_authToken != null) {
         final success = await AlertService.instance.sendSosAlert(
@@ -165,12 +208,16 @@ class AlertController extends ChangeNotifier {
           authToken: _authToken!,
         );
         if (!success) {
-          print('⚠️ Alert saved locally but failed to send to backend. Will retry when connection is available.');
+          print(
+            '⚠️ Alert saved locally but failed to send to backend. Will retry when connection is available.',
+          );
         }
       } else {
-        print('⚠️ Auth token not set. Alert saved locally but not sent to backend.');
+        print(
+          '⚠️ Auth token not set. Alert saved locally but not sent to backend.',
+        );
       }
-      
+
       notifyListeners();
     } catch (e) {
       print('Error sending alert: $e');
@@ -194,6 +241,12 @@ class AlertController extends ChangeNotifier {
 
         _alerts[index] = updatedAlert;
 
+        // Cancel SMS and Call escalations if alert is accepted or rejected
+        if (status == AlertStatus.accepted || status == AlertStatus.rejected) {
+          SmsEscalationService.instance.cancelEscalation(alertId);
+          CallEscalationService.instance.cancelEscalation(alertId);
+        }
+
         // Add notification
         _addNotification(
           alertId: alertId,
@@ -203,7 +256,7 @@ class AlertController extends ChangeNotifier {
 
         // Save to local storage
         await _saveAlertToStorage(updatedAlert);
-        
+
         notifyListeners();
       }
     } catch (e) {
@@ -212,9 +265,7 @@ class AlertController extends ChangeNotifier {
   }
 
   /// Forward alert to security body (called by proctorial body)
-  Future<void> forwardAlertToSecurity({
-    required String alertId,
-  }) async {
+  Future<void> forwardAlertToSecurity({required String alertId}) async {
     try {
       final index = _alerts.indexWhere((a) => a.id == alertId);
       if (index != -1) {
@@ -227,7 +278,7 @@ class AlertController extends ChangeNotifier {
 
         // Save to local storage
         await _saveAlertToStorage(updatedAlert);
-        
+
         notifyListeners();
       }
     } catch (e) {
@@ -242,7 +293,9 @@ class AlertController extends ChangeNotifier {
 
   /// Get alerts for proctorial body (not forwarded yet)
   List<AlertModel> getProctorialAlerts() {
-    return _alerts.where((a) => a.forwardedTo == null || a.forwardedTo == 'proctorial').toList();
+    return _alerts
+        .where((a) => a.forwardedTo == null || a.forwardedTo == 'proctorial')
+        .toList();
   }
 
   /// Add a notification to the list
@@ -250,7 +303,8 @@ class AlertController extends ChangeNotifier {
     required String alertId,
     required AlertStatus status,
     required String respondedByName,
-    bool saveToFirestore = true, // Only save proctor responses, not "alert sent"
+    bool saveToFirestore =
+        true, // Only save proctor responses, not "alert sent"
   }) {
     final notification = AlertNotification(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -263,17 +317,19 @@ class AlertController extends ChangeNotifier {
 
     _notifications.insert(0, notification);
     _unreadNotificationCount++;
-    
+
     // Save notification to Firestore for persistence (only proctor responses)
     if (saveToFirestore) {
       _saveNotificationToFirestore(notification);
     }
-    
+
     print('🔔 Notification created: ${notification.id}');
   }
 
   /// Save notification to Firestore
-  Future<void> _saveNotificationToFirestore(AlertNotification notification) async {
+  Future<void> _saveNotificationToFirestore(
+    AlertNotification notification,
+  ) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -291,7 +347,7 @@ class AlertController extends ChangeNotifier {
             'timestamp': notification.timestamp,
             'isRead': notification.isRead,
           });
-      
+
       print('✅ Notification saved to Firestore: ${notification.id}');
     } catch (e) {
       print('❌ Error saving notification to Firestore: $e');
@@ -306,16 +362,19 @@ class AlertController extends ChangeNotifier {
       if (!_notifications[index].isRead) {
         _unreadNotificationCount--;
       }
-      
+
       // Update in Firestore
       _updateNotificationReadStatus(notificationId, true);
-      
+
       notifyListeners();
     }
   }
 
   /// Update notification read status in Firestore
-  Future<void> _updateNotificationReadStatus(String notificationId, bool isRead) async {
+  Future<void> _updateNotificationReadStatus(
+    String notificationId,
+    bool isRead,
+  ) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -393,11 +452,11 @@ class AlertController extends ChangeNotifier {
           .collection('proctorial_alerts')
           .doc(alert.id)
           .set({
-        ...alert.toJson(),
-        'receivedAt': FieldValue.serverTimestamp(),
-        'notificationsSent': false,
-        'userId': user.uid, // Track which user sent this
-      });
+            ...alert.toJson(),
+            'receivedAt': FieldValue.serverTimestamp(),
+            'notificationsSent': false,
+            'userId': user.uid, // Track which user sent this
+          });
 
       print('✅ Alert also saved to proctorial_alerts collection');
       print('   Proctorial dashboard will now show this alert!');

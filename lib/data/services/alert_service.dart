@@ -9,14 +9,15 @@ class AlertService {
 
   static AlertService get instance => _instance;
 
-  // Local Firebase Functions emulator
-  static const String baseUrl = 'http://localhost:5001/safe-93f85/us-central1';
-  
-  // For local testing with Firebase Emulators:
-  // static const String baseUrl = 'http://localhost:5001/YOUR_PROJECT_ID/us-central1';
+  // Production Firebase Cloud Functions URL
+  static const String baseUrl =
+      'https://us-central1-safe-93f85.cloudfunctions.net';
+
+  // For local testing with Firebase Emulators (uncomment to use):
+  // static const String baseUrl = 'http://localhost:5001/safe-93f85/us-central1';
 
   /// Send SOS alert to proctorial body
-  /// 
+  ///
   /// This sends the student's emergency alert with their current location,
   /// name, ID, department, and session to the backend for proctorial body notification.
   /// All data is fetched fresh from Firestore to ensure accuracy.
@@ -26,7 +27,7 @@ class AlertService {
   }) async {
     try {
       final url = Uri.parse('$baseUrl/sendSosAlert');
-      
+
       // Log the alert data being sent (for verification)
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       print('🚨 SENDING SOS ALERT TO PROCTORIAL BODY');
@@ -42,16 +43,16 @@ class AlertService {
       print('Time: ${alert.timestamp}');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(alert.toJson()),
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Request timeout'),
-      );
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(alert.toJson()),
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw Exception('Request timeout'),
+          );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print('✅ SOS alert sent successfully to backend');
@@ -62,7 +63,9 @@ class AlertService {
       } else if (response.statusCode == 400) {
         throw Exception('Bad request - ${response.body}');
       } else {
-        throw Exception('Failed to send alert - Status: ${response.statusCode}');
+        throw Exception(
+          'Failed to send alert - Status: ${response.statusCode}',
+        );
       }
     } catch (e) {
       print('❌ Error sending SOS alert: $e');
@@ -80,13 +83,15 @@ class AlertService {
     try {
       final url = Uri.parse('$baseUrl/alerts?studentId=$studentId');
 
-      final response = await http.get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonData = jsonDecode(response.body);
@@ -108,13 +113,15 @@ class AlertService {
     try {
       final url = Uri.parse('$baseUrl/alerts/$alertId');
 
-      final response = await http.get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return AlertModel.fromJson(jsonDecode(response.body));
@@ -135,17 +142,19 @@ class AlertService {
     try {
       final url = Uri.parse('$baseUrl/alerts/$alertId/acknowledge');
 
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({
-          'acknowledgedBy': acknowledgedBy,
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: jsonEncode({
+              'acknowledgedBy': acknowledgedBy,
+              'timestamp': DateTime.now().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       return response.statusCode == 200;
     } catch (e) {
@@ -163,17 +172,19 @@ class AlertService {
     try {
       final url = Uri.parse('$baseUrl/alerts/$alertId/accept');
 
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({
-          'acceptedBy': acceptedBy,
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: jsonEncode({
+              'acceptedBy': acceptedBy,
+              'timestamp': DateTime.now().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       return response.statusCode == 200;
     } catch (e) {
@@ -192,18 +203,20 @@ class AlertService {
     try {
       final url = Uri.parse('$baseUrl/alerts/$alertId/reject');
 
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({
-          'rejectedBy': rejectedBy,
-          'reason': reason,
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: jsonEncode({
+              'rejectedBy': rejectedBy,
+              'reason': reason,
+              'timestamp': DateTime.now().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       return response.statusCode == 200;
     } catch (e) {
@@ -221,17 +234,19 @@ class AlertService {
     try {
       final url = Uri.parse('$baseUrl/alerts/$alertId/forward-to-security');
 
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({
-          'forwardedBy': forwardedBy,
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: jsonEncode({
+              'forwardedBy': forwardedBy,
+              'timestamp': DateTime.now().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       return response.statusCode == 200;
     } catch (e) {
