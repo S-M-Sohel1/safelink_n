@@ -17,6 +17,10 @@ class AlertModel {
   final DateTime? respondedAt;
   final String? forwardedTo; // null, 'security', or 'proctorial'
   final DateTime? forwardedAt;
+  final bool smsEscalated; // Whether SMS has been sent
+  final DateTime? smsEscalatedAt; // When SMS was sent
+  final bool callEscalated; // Whether call has been initiated
+  final DateTime? callEscalatedAt; // When call was initiated
 
   AlertModel({
     required this.id,
@@ -35,6 +39,10 @@ class AlertModel {
     this.respondedAt,
     this.forwardedTo,
     this.forwardedAt,
+    this.smsEscalated = false,
+    this.smsEscalatedAt,
+    this.callEscalated = false,
+    this.callEscalatedAt,
   });
 
   factory AlertModel.fromJson(Map<String, dynamic> json) => AlertModel(
@@ -51,9 +59,13 @@ class AlertModel {
     timestamp: _parseDateTime(json['timestamp']),
     status: _parseStatus(json['status']),
     respondedByName: json['respondedByName'],
-    respondedAt: _parseDateTime(json['respondedAt']),
+    respondedAt: _parseDateTimeNullable(json['respondedAt']),
     forwardedTo: json['forwardedTo'],
-    forwardedAt: _parseDateTime(json['forwardedAt']),
+    forwardedAt: _parseDateTimeNullable(json['forwardedAt']),
+    smsEscalated: json['smsEscalated'] ?? false,
+    smsEscalatedAt: _parseDateTimeNullable(json['smsEscalatedAt']),
+    callEscalated: json['callEscalated'] ?? false,
+    callEscalatedAt: _parseDateTimeNullable(json['callEscalatedAt']),
   );
 
   static DateTime _parseDateTime(dynamic value) {
@@ -65,6 +77,18 @@ class AlertModel {
       return (value as dynamic).toDate();
     } catch (e) {
       return DateTime.now();
+    }
+  }
+
+  static DateTime? _parseDateTimeNullable(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.parse(value);
+    // Handle Firestore Timestamp
+    try {
+      return (value as dynamic).toDate();
+    } catch (e) {
+      return null;
     }
   }
 
@@ -96,6 +120,10 @@ class AlertModel {
     'respondedAt': respondedAt?.toIso8601String(),
     'forwardedTo': forwardedTo,
     'forwardedAt': forwardedAt?.toIso8601String(),
+    'smsEscalated': smsEscalated,
+    'smsEscalatedAt': smsEscalatedAt?.toIso8601String(),
+    'callEscalated': callEscalated,
+    'callEscalatedAt': callEscalatedAt?.toIso8601String(),
   };
 
   AlertModel copyWith({
@@ -115,6 +143,10 @@ class AlertModel {
     DateTime? respondedAt,
     String? forwardedTo,
     DateTime? forwardedAt,
+    bool? smsEscalated,
+    DateTime? smsEscalatedAt,
+    bool? callEscalated,
+    DateTime? callEscalatedAt,
   }) {
     return AlertModel(
       id: id ?? this.id,
@@ -133,6 +165,10 @@ class AlertModel {
       respondedAt: respondedAt ?? this.respondedAt,
       forwardedTo: forwardedTo ?? this.forwardedTo,
       forwardedAt: forwardedAt ?? this.forwardedAt,
+      smsEscalated: smsEscalated ?? this.smsEscalated,
+      smsEscalatedAt: smsEscalatedAt ?? this.smsEscalatedAt,
+      callEscalated: callEscalated ?? this.callEscalated,
+      callEscalatedAt: callEscalatedAt ?? this.callEscalatedAt,
     );
   }
 }
