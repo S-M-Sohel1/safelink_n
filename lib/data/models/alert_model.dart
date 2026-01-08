@@ -1,0 +1,138 @@
+enum AlertStatus { pending, accepted, rejected }
+
+class AlertModel {
+  final String id;
+  final String studentId;
+  final String studentName;
+  final String studentPhone;
+  final String studentEmail;
+  final double latitude;
+  final double longitude;
+  final String location;
+  final String? department;
+  final String? session;
+  final DateTime timestamp;
+  final AlertStatus status;
+  final String? respondedByName;
+  final DateTime? respondedAt;
+  final String? forwardedTo; // null, 'security', or 'proctorial'
+  final DateTime? forwardedAt;
+
+  AlertModel({
+    required this.id,
+    required this.studentId,
+    required this.studentName,
+    required this.studentPhone,
+    required this.studentEmail,
+    required this.latitude,
+    required this.longitude,
+    required this.location,
+    this.department,
+    this.session,
+    required this.timestamp,
+    this.status = AlertStatus.pending,
+    this.respondedByName,
+    this.respondedAt,
+    this.forwardedTo,
+    this.forwardedAt,
+  });
+
+  factory AlertModel.fromJson(Map<String, dynamic> json) => AlertModel(
+    id: json['id'] ?? '',
+    studentId: json['studentId'] ?? '',
+    studentName: json['studentName'] ?? '',
+    studentPhone: json['studentPhone'] ?? '',
+    studentEmail: json['studentEmail'] ?? '',
+    latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+    longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+    location: json['location'] ?? '',
+    department: json['department'],
+    session: json['session'],
+    timestamp: _parseDateTime(json['timestamp']),
+    status: _parseStatus(json['status']),
+    respondedByName: json['respondedByName'],
+    respondedAt: _parseDateTime(json['respondedAt']),
+    forwardedTo: json['forwardedTo'],
+    forwardedAt: _parseDateTime(json['forwardedAt']),
+  );
+
+  static DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.parse(value);
+    // Handle Firestore Timestamp
+    try {
+      return (value as dynamic).toDate();
+    } catch (e) {
+      return DateTime.now();
+    }
+  }
+
+  static AlertStatus _parseStatus(String? status) {
+    switch (status?.toLowerCase()) {
+      case 'accepted':
+        return AlertStatus.accepted;
+      case 'rejected':
+        return AlertStatus.rejected;
+      default:
+        return AlertStatus.pending;
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'studentId': studentId,
+    'studentName': studentName,
+    'studentPhone': studentPhone,
+    'studentEmail': studentEmail,
+    'latitude': latitude,
+    'longitude': longitude,
+    'location': location,
+    'department': department,
+    'session': session,
+    'timestamp': timestamp.toIso8601String(),
+    'status': status.toString().split('.').last,
+    'respondedByName': respondedByName,
+    'respondedAt': respondedAt?.toIso8601String(),
+    'forwardedTo': forwardedTo,
+    'forwardedAt': forwardedAt?.toIso8601String(),
+  };
+
+  AlertModel copyWith({
+    String? id,
+    String? studentId,
+    String? studentName,
+    String? studentPhone,
+    String? studentEmail,
+    double? latitude,
+    double? longitude,
+    String? location,
+    String? department,
+    String? session,
+    DateTime? timestamp,
+    AlertStatus? status,
+    String? respondedByName,
+    DateTime? respondedAt,
+    String? forwardedTo,
+    DateTime? forwardedAt,
+  }) {
+    return AlertModel(
+      id: id ?? this.id,
+      studentId: studentId ?? this.studentId,
+      studentName: studentName ?? this.studentName,
+      studentPhone: studentPhone ?? this.studentPhone,
+      studentEmail: studentEmail ?? this.studentEmail,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      location: location ?? this.location,
+      department: department ?? this.department,
+      session: session ?? this.session,
+      timestamp: timestamp ?? this.timestamp,
+      status: status ?? this.status,
+      respondedByName: respondedByName ?? this.respondedByName,
+      respondedAt: respondedAt ?? this.respondedAt,
+      forwardedTo: forwardedTo ?? this.forwardedTo,
+      forwardedAt: forwardedAt ?? this.forwardedAt,
+    );
+  }
+}

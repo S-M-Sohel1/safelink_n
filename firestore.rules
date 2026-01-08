@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // DEV ONLY: allow any signed-in user to read/write notifications.
+    // TODO: tighten with custom claims (e.g., proctor) before production.
+    match /users/{userId}/notifications/{docId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
