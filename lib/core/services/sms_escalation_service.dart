@@ -141,7 +141,8 @@ class SmsEscalationService {
 
       // TEMPORARY: Use dummy number for testing (proper format required)
       final List<String> testPhones = [
-        '+8801712345678',
+        '+8801714721112',
+        '+8801835498205',
       ]; // Use valid BD phone format
 
       // TODO: Uncomment below to get real proctor phone numbers from Firestore

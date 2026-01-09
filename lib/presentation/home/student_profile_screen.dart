@@ -13,6 +13,7 @@ import '../../core/services/shake_detection_service.dart';
 import '../../core/services/volume_button_sos_service.dart';
 import '../../core/services/sms_escalation_service.dart';
 import '../../core/services/call_escalation_service.dart';
+import '../../core/services/location_service.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({Key? key}) : super(key: key);
@@ -28,50 +29,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   int _currentIndex = 0;
   late AnimationController _pulseController;
   StreamSubscription<Position>? _liveLocationSub;
-  String? _selectedBuilding;
-  String? _selectedFloor;
   Timer? _volumeResumeTimer; // Timer for delayed volume button resume
-
-  // Building list
-  final List<String> _buildings = [
-    'Library Building',
-    'Academic Building 1',
-    'Academic Building 2',
-    'Auditorium',
-    'Julai Sahid Smrity Hall',
-    'Bibi Khadiza Hall',
-    'Malek Hall',
-    'Abdus Salam Hall',
-    'Proshasonic Building',
-  ];
-
-  // Floor list (Ground floor + 1-10)
-  final List<String> _floors = [
-    'Ground Floor',
-    'Floor 1',
-    'Floor 2',
-    'Floor 3',
-    'Floor 4',
-    'Floor 5',
-    'Floor 6',
-    'Floor 7',
-    'Floor 8',
-    'Floor 9',
-    'Floor 10',
-  ];
-
-  // Building coordinates (approximate NSTU campus locations)
-  final Map<String, Map<String, double>> _buildingCoordinates = {
-    'Library Building': {'lat': 22.8719, 'lon': 91.0987},
-    'Academic Building 1': {'lat': 22.8722, 'lon': 91.0990},
-    'Academic Building 2': {'lat': 22.8725, 'lon': 91.0993},
-    'Auditorium': {'lat': 22.8716, 'lon': 91.0983},
-    'Julai Sahid Smrity Hall': {'lat': 22.8713, 'lon': 91.0995},
-    'Bibi Khadiza Hall': {'lat': 22.8710, 'lon': 91.0998},
-    'Malek Hall': {'lat': 22.8728, 'lon': 91.0980},
-    'Abdus Salam Hall': {'lat': 22.8730, 'lon': 91.0977},
-    'Proshasonic Building': {'lat': 22.8720, 'lon': 91.0985},
-  };
 
   @override
   void initState() {
@@ -80,7 +38,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     // Add lifecycle observer to detect app resume
     WidgetsBinding.instance.addObserver(this);
 
-    _initializeLocation();
+    // Event 1: Capture location on app open
+    _captureInitialLocation();
     // Initialize real-time listener for alerts
     AlertController.instance.initializeRealtimeListener();
     // Set auth token for backend communication
@@ -103,11 +62,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   }
 
   @override
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.resumed) {
       print('📱 App resumed - checking volume button service state');
+
+      // Event 2: App resumed from background - refresh location
+      LocationService.instance.captureLocation().then((_) {
+        if (mounted) {
+          setState(() {
+            _locationStatus = LocationService.instance.getLocationStatus();
+          });
+        }
+      });
 
       // Check if volume service is listening but paused
       if (VolumeButtonSosService.instance.isListening &&
@@ -198,192 +167,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     super.dispose();
   }
 
-  Future<void> _initializeLocation() async {
-    await Future.delayed(const Duration(seconds: 2));
+  Future<void> _captureInitialLocation() async {
+    // Event-based capture: Get location on app open
+    await LocationService.instance.captureLocation();
+
     if (mounted) {
-      final savedLoc = ProfileController.instance.savedLocation;
       setState(() {
-        _locationStatus = savedLoc ?? 'NSTU Campus, Noakhali';
+        _locationStatus = LocationService.instance.getLocationStatus();
       });
-    }
-  }
-
-  Future<void> _showBuildingFloorSelection() async {
-    // Show building selection dialog
-    await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: const [
-              Icon(Icons.location_city, color: Color(0xFF1E88E5)),
-              SizedBox(width: 10),
-              Text('Select Building'),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _buildings.length,
-              itemBuilder: (context, index) {
-                final building = _buildings[index];
-                return Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: const Color(0xFF1E88E5).withOpacity(0.1),
-                      child: const Icon(
-                        Icons.business,
-                        color: Color(0xFF1E88E5),
-                      ),
-                    ),
-                    title: Text(
-                      building,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showFloorSelection(building);
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showFloorSelection(String building) async {
-    // Show floor selection dialog
-    await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: [
-              const Icon(Icons.stairs, color: Color(0xFF1E88E5)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Select Floor\n$building',
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _floors.length,
-              itemBuilder: (context, index) {
-                final floor = _floors[index];
-                return Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.green.withOpacity(0.1),
-                      child: Text(
-                        index == 0 ? 'G' : '$index',
-                        style: const TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      floor,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.check_circle_outline, size: 20),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _saveSelectedLocation(building, floor);
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Back'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _saveSelectedLocation(String building, String floor) async {
-    // Get building coordinates
-    final coordinates = _buildingCoordinates[building];
-    final lat = coordinates?['lat'] ?? 22.8690;
-    final lon = coordinates?['lon'] ?? 91.0990;
-
-    setState(() {
-      _selectedBuilding = building;
-      _selectedFloor = floor;
-      _locationStatus = '$building - $floor';
-    });
-
-    // Save to ProfileController with actual coordinates
-    ProfileController.instance.setLocation(
-      location: '$building - $floor',
-      lat: lat,
-      lon: lon,
-      building: building,
-      floor: floor,
-    );
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 10),
-              Expanded(child: Text('Location set successfully!')),
-            ],
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
     }
   }
 
@@ -530,8 +321,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     setState(() => _sending = true);
 
     // Prepare variables outside try so they are in scope for Firestore updates
-    double latitude = 0.0;
-    double longitude = 0.0;
     String alertId = '';
 
     try {
@@ -539,27 +328,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       final profileController = ProfileController.instance;
       await profileController.loadFromFirestore();
 
-      // Start with last known values
-      latitude = profileController.latitude ?? 0.0;
-      longitude = profileController.longitude ?? 0.0;
+      // Event 3: Force high-accuracy location capture for emergency
+      final position = await LocationService.instance.captureForEmergency();
+      final latitude = position.latitude;
+      final longitude = position.longitude;
 
-      // Get current GPS location
-      var locationStatus = await Permission.location.status;
-      if (!locationStatus.isGranted) {
-        locationStatus = await Permission.location.request();
-      }
-
-      if (locationStatus.isGranted) {
-        try {
-          final position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.bestForNavigation,
-          );
-          latitude = position.latitude;
-          longitude = position.longitude;
-        } catch (e) {
-          print('Error getting location: $e');
-        }
-      }
+      print(
+        '🚨 Alert location: $latitude, $longitude (±${position.accuracy}m)',
+      );
 
       // Build a fresh location string from the current coordinates (reverse geocode best-effort)
       final locString = await _reverseGeocode(latitude, longitude);
@@ -580,8 +356,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         location: locString,
         department: profileController.department,
         session: profileController.session,
-        building: _selectedBuilding,
-        floor: _selectedFloor,
       );
 
       // Get the alert ID from the most recent alert
@@ -599,8 +373,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 'liveLatitude': latitude,
                 'liveLongitude': longitude,
                 'liveLocationName': locString,
-                'building': _selectedBuilding,
-                'floor': _selectedFloor,
                 'updatedAt': FieldValue.serverTimestamp(),
               });
           _startLiveLocationUpdates(alertId);
@@ -1141,16 +913,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 ),
                 BottomNavigationBarItem(
                   icon: _buildNavIcon(
-                    Icons.gps_fixed_rounded,
-                    1,
-                    Colors.blueAccent,
-                  ),
-                  label: '',
-                ),
-                BottomNavigationBarItem(
-                  icon: _buildNavIcon(
                     Icons.map_rounded,
-                    2,
+                    1,
                     Colors.deepPurpleAccent,
                   ),
                   label: '',
@@ -1158,7 +922,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                 BottomNavigationBarItem(
                   icon: _buildNavIcon(
                     Icons.notifications_rounded,
-                    3,
+                    2,
                     Colors.deepOrangeAccent,
                   ),
                   label: '',
@@ -1178,13 +942,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                   _currentIndex = index;
                 });
                 if (index == 1) {
-                  // Set Location button tapped
-                  _showBuildingFloorSelection();
-                } else if (index == 2) {
                   // View Map button tapped
                   _showMapOptions();
-                } else if (index == 3) {
-                  // Open notifications - Check if user is proctor
+                } else if (index == 2) {
+                  // Open notifications
                   _openAlertsScreen();
                 }
               },
@@ -1296,10 +1057,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       case 0:
         return 'Home';
       case 1:
-        return 'Set Location';
-      case 2:
         return 'View Map';
-      case 3:
+      case 2:
         return 'Notification';
       default:
         return '';

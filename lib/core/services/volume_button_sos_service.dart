@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:volume_controller/volume_controller.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../presentation/home/controllers/alert_controller.dart';
 import '../../presentation/auth/controllers/profile_controller.dart';
+import 'location_service.dart';
 
 /// Service to detect volume button presses for emergency SOS (FR12)
 ///
@@ -211,26 +210,15 @@ class VolumeButtonSosService {
       final profileController = ProfileController.instance;
       await profileController.loadFromFirestore();
 
-      // Get current GPS location
-      double latitude = profileController.latitude ?? 0.0;
-      double longitude = profileController.longitude ?? 0.0;
+      // Event: Force high-accuracy location for volume button alert
+      print('🚨 Volume button alert - capturing emergency location');
+      final position = await LocationService.instance.captureForEmergency();
+      final latitude = position.latitude;
+      final longitude = position.longitude;
 
-      var locationStatus = await Permission.location.status;
-      if (!locationStatus.isGranted) {
-        locationStatus = await Permission.location.request();
-      }
-
-      if (locationStatus.isGranted) {
-        try {
-          final position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.bestForNavigation,
-          );
-          latitude = position.latitude;
-          longitude = position.longitude;
-        } catch (e) {
-          print('⚠️ Error getting location: $e');
-        }
-      }
+      print(
+        '📍 Volume button alert location: $latitude, $longitude (±${position.accuracy}m)',
+      );
 
       // Reverse geocode location
       String locationString = 'Unknown location';

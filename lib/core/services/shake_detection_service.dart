@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shake/shake.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../presentation/home/controllers/alert_controller.dart';
 import '../../presentation/auth/controllers/profile_controller.dart';
+import 'location_service.dart';
 
 /// Service to detect phone shake gestures and trigger emergency alerts
 ///
@@ -133,26 +132,15 @@ class ShakeDetectionService {
       final profileController = ProfileController.instance;
       await profileController.loadFromFirestore();
 
-      // Get current GPS location
-      double latitude = profileController.latitude ?? 0.0;
-      double longitude = profileController.longitude ?? 0.0;
+      // Event: Force high-accuracy location for shake alert
+      print('🚨 Shake alert - capturing emergency location');
+      final position = await LocationService.instance.captureForEmergency();
+      final latitude = position.latitude;
+      final longitude = position.longitude;
 
-      var locationStatus = await Permission.location.status;
-      if (!locationStatus.isGranted) {
-        locationStatus = await Permission.location.request();
-      }
-
-      if (locationStatus.isGranted) {
-        try {
-          final position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.bestForNavigation,
-          );
-          latitude = position.latitude;
-          longitude = position.longitude;
-        } catch (e) {
-          print('⚠️ Error getting location: $e');
-        }
-      }
+      print(
+        '📍 Shake alert location: $latitude, $longitude (±${position.accuracy}m)',
+      );
 
       // Reverse geocode location
       String locationString = 'Unknown location';
@@ -198,48 +186,6 @@ class ShakeDetectionService {
         _showErrorPopup(_context!, e.toString());
       }
     }
-  }
-
-  /// Show success popup after alert sent
-  void _showSuccessPopup(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.green[50],
-          title: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 28),
-              SizedBox(width: 12),
-              Text('SOS Alert Sent!'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '✅ Your shake-triggered emergency alert has been sent.',
-                style: TextStyle(fontSize: 16),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Proctorial body has been notified and help is on the way.',
-                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
-              child: Text('OK', style: TextStyle(color: Colors.green)),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   /// Show error popup if alert fails
