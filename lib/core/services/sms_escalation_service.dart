@@ -99,6 +99,16 @@ class SmsEscalationService {
     print('🚫 All SMS escalations cancelled');
   }
 
+  /// Validate Bangladesh phone number format
+  bool _isValidBDPhone(String phone) {
+    // Bangladesh phone format: +880XXXXXXXXXX
+    if (!phone.startsWith('+880')) return false;
+
+    // Check if remaining digits are numeric (after +880)
+    final digits = phone.substring(4);
+    return int.tryParse(digits) != null && digits.length >= 10;
+  }
+
   /// Trigger SMS escalation with 5-second countdown
   Future<void> _triggerSmsEscalation(String alertId) async {
     print('🎯 _triggerSmsEscalation called for alert $alertId');
@@ -139,24 +149,70 @@ class SmsEscalationService {
     try {
       print('📤 Sending SMS to proctors for alert $alertId');
 
-      // TEMPORARY: Use dummy number for testing (proper format required)
-      final List<String> testPhones = [
-        '+8801714721112',
-        '+8801835498205',
-      ]; // Use valid BD phone format
+      // Fallback phone numbers (hardcoded)
+      final List<String> testPhones = ['+8801714721112', '+8801835498205'];
 
-      // TODO: Uncomment below to get real proctor phone numbers from Firestore
-      /*
-      final proctorsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'proctorial')
-          .get();
+      List<String> proctorPhones = [];
 
-      if (proctorsSnapshot.docs.isEmpty) {
-        print('⚠️ No proctors found in database');
-        return;
+      try {
+        // Fetch all proctor and assistant proctor phone numbers from Firestore
+        print('📱 Querying Firestore for proctors...');
+        final proctorsSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('designation', whereIn: ['Proctor', 'Assistant Proctor'])
+            .get();
+
+        // Extract phone numbers with detailed logging
+        print('📋 Found ${proctorsSnapshot.docs.length} proctor documents');
+        for (final doc in proctorsSnapshot.docs) {
+          final data = doc.data();
+          final name = data['name'] ?? 'Unknown';
+          final designation = data['designation'] ?? 'Unknown';
+          final phone = data['phone'] as String?;
+
+          print('   👤 $name ($designation): ${phone ?? "NO PHONE"}');
+
+          if (phone != null && phone.isNotEmpty) {
+            proctorPhones.add(phone);
+          }
+        }
+
+        if (proctorPhones.isNotEmpty) {
+          print(
+            '📱 Found ${proctorPhones.length} proctor phone numbers from database',
+          );
+          print('📱 Raw phones: $proctorPhones');
+        } else {
+          print('⚠️ No proctors found in database - using fallback phones');
+          proctorPhones = testPhones;
+        }
+      } catch (e) {
+        print('❌ Firestore query failed: $e - using fallback phones');
+        proctorPhones = testPhones;
       }
-      */
+
+      // Validate phone numbers with detailed logging
+      print('🔍 Validating ${proctorPhones.length} phone numbers...');
+      final validPhones = <String>[];
+      final invalidPhones = <String>[];
+
+      for (final phone in proctorPhones) {
+        if (_isValidBDPhone(phone)) {
+          validPhones.add(phone);
+          print('   ✅ Valid: $phone');
+        } else {
+          invalidPhones.add(phone);
+          print('   ❌ Invalid: $phone (missing +880 or wrong format)');
+        }
+      }
+
+      if (validPhones.isEmpty) {
+        print('❌ No valid phone numbers found - using emergency fallback');
+        validPhones.add('+8801714721112'); // Emergency contact
+      }
+
+      print('✅ ${validPhones.length} valid, ${invalidPhones.length} invalid');
+      print('📋 Final SMS recipients: $validPhones');
 
       // Get alert details
       final alertDoc = await FirebaseFirestore.instance
@@ -185,13 +241,16 @@ class SmsEscalationService {
           'Open SafeLink app immediately!';
 
       int smsSent = 0;
+      int smsFailed = 0;
 
-      // TEMPORARY: Use test phones instead of database query
-      for (final phone in testPhones) {
+      // Send SMS to all valid proctor phones
+      for (final phone in validPhones) {
         try {
-          print('📤 Sending native SMS to $phone...');
+          // Hide last 3 digits for privacy in logs
+          final maskedPhone = '${phone.substring(0, phone.length - 3)}***';
+          print('📤 Sending SMS to $maskedPhone...');
 
-          // Try native Android SMS first
+          // Try native Android SMS first (silent, no user interaction)
           final success = await NativeSms.sendSMS(
             phone: phone,
             message: smsBody,
@@ -199,51 +258,23 @@ class SmsEscalationService {
 
           if (success) {
             smsSent++;
-            print('✅ Native SMS sent successfully to $phone');
+            print('✅ SMS sent to $maskedPhone');
           } else {
-            print('⚠️ Native SMS failed, trying SMS composer...');
-
-            // Fallback: Open SMS composer
-            final Uri smsUri = Uri.parse(
-              'sms:$phone?body=${Uri.encodeComponent(smsBody)}',
-            );
-            await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+            smsFailed++;
+            print('❌ SMS failed for $maskedPhone');
           }
 
-          // Small delay between SMS
+          // Rate limiting: 500ms delay between messages
           await Future.delayed(Duration(milliseconds: 500));
         } catch (e) {
-          print('❌ Error opening SMS composer for $phone: $e');
+          smsFailed++;
+          print('❌ Error sending SMS to phone: $e');
         }
       }
 
-      /* TODO: Uncomment to use real proctor data
-      for (final doc in proctorsSnapshot.docs) {
-        final phone = doc.data()['phone'] as String?;
-        if (phone == null || phone.isEmpty) continue;
+      print('📊 SMS Report: $smsSent sent, $smsFailed failed');
 
-        try {
-          // Launch SMS composer
-          final Uri smsUri = Uri.parse('sms:$phone?body=$smsBody');
-          final canLaunch = await canLaunchUrl(smsUri);
-
-          if (canLaunch) {
-            await launchUrl(smsUri);
-            smsSent++;
-            print('✅ SMS opened for $phone');
-
-            // Small delay between SMS to avoid overwhelming the system
-            await Future.delayed(Duration(milliseconds: 500));
-          } else {
-            print('⚠️ Cannot launch SMS for $phone');
-          }
-        } catch (e) {
-          print('❌ Error sending SMS to $phone: $e');
-        }
-      }
-      */
-
-      // Mark alert as SMS escalated
+      // Mark alert as SMS escalated with detailed tracking
       await FirebaseFirestore.instance
           .collection('proctorial_alerts')
           .doc(alertId)
@@ -251,6 +282,8 @@ class SmsEscalationService {
             'smsEscalated': true,
             'smsEscalatedAt': FieldValue.serverTimestamp(),
             'smsCount': smsSent,
+            'smsFailedCount': smsFailed,
+            'smsRecipients': validPhones,
           });
 
       print('✅ SMS escalation completed: $smsSent SMS sent');

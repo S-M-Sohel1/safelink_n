@@ -162,7 +162,7 @@ class CallEscalationService {
       print('📞 Alert from: $studentName ($studentId) at $location');
 
       // FOR TESTING: Use dummy phone numbers
-      final List<String> testPhones = ['+8801712345678'];
+      final List<String> testPhones = ['+8801714721112'];
       print('📞 TEST MODE: Will call ${testPhones.length} test numbers');
 
       int callsInitiated = 0;
