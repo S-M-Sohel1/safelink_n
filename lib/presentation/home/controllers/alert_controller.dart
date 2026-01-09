@@ -166,8 +166,6 @@ class AlertController extends ChangeNotifier {
     required String location,
     String? department,
     String? session,
-    String? building,
-    String? floor,
   }) async {
     try {
       final alert = AlertModel(

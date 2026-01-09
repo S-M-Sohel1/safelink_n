@@ -13,12 +13,7 @@ class ProfileController extends ChangeNotifier {
   String session = '2019-20';
   String phone = '01819129553';
   String email = 'student@nstu.edu.bd';
-  String? savedLocation;
-  double? latitude;
-  double? longitude;
-  String? building;
-  String? floor;
-  
+
   // Staff-specific fields
   String designation = '';
   String role = 'student';
@@ -41,22 +36,6 @@ class ProfileController extends ChangeNotifier {
     this.session = session;
     this.phone = phone;
     notifyListeners();
-  }
-
-  void setLocation({
-    required String location,
-    required double lat,
-    required double lon,
-    String? building,
-    String? floor,
-  }) {
-    savedLocation = location;
-    latitude = lat;
-    longitude = lon;
-    this.building = building;
-    this.floor = floor;
-    notifyListeners();
-    _saveToPrefs();
   }
 
   void updateAll({
@@ -87,9 +66,6 @@ class ProfileController extends ChangeNotifier {
     email = prefs.getString('profile.email') ?? email;
     designation = prefs.getString('profile.designation') ?? designation;
     role = prefs.getString('profile.role') ?? role;
-    savedLocation = prefs.getString('profile.savedLocation');
-    latitude = prefs.getDouble('profile.latitude');
-    longitude = prefs.getDouble('profile.longitude');
     notifyListeners();
   }
 
@@ -98,22 +74,22 @@ class ProfileController extends ChangeNotifier {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
-      
+
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
-      
+
       if (!doc.exists) return;
-      
+
       final data = doc.data()!;
-      
+
       // Common fields
       name = data['name'] ?? name;
       email = data['email'] ?? email;
       phone = data['phone'] ?? phone;
       role = data['role'] ?? role;
-      
+
       // Staff-specific fields
       if (role == 'proctorial' || role == 'security') {
         designation = data['designation'] ?? '';
@@ -131,7 +107,7 @@ class ProfileController extends ChangeNotifier {
         department = data['department'] ?? department;
         session = data['session'] ?? session;
       }
-      
+
       notifyListeners();
       await _saveToPrefs();
     } catch (e) {
@@ -149,8 +125,5 @@ class ProfileController extends ChangeNotifier {
     await prefs.setString('profile.email', email);
     await prefs.setString('profile.designation', designation);
     await prefs.setString('profile.role', role);
-    if (savedLocation != null) await prefs.setString('profile.savedLocation', savedLocation!);
-    if (latitude != null) await prefs.setDouble('profile.latitude', latitude!);
-    if (longitude != null) await prefs.setDouble('profile.longitude', longitude!);
   }
 }
