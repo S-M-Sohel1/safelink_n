@@ -317,7 +317,7 @@ class _CountdownDialog extends StatefulWidget {
 }
 
 class _CountdownDialogState extends State<_CountdownDialog> {
-  int _countdown = 5;
+  int _countdown = AppConstants.countdown;
   Timer? _timer;
 
   @override

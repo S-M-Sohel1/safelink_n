@@ -32,23 +32,28 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
       if (lat == null || lon == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No location available for this alert')), 
+          const SnackBar(content: Text('No location available for this alert')),
         );
         return;
       }
 
-      final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
-      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      final url = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lon',
+      );
+      final launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
       if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open Google Maps')), 
+          const SnackBar(content: Text('Could not open Google Maps')),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error opening location: $e')), 
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error opening location: $e')));
     }
   }
 
@@ -69,7 +74,8 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
         final data = merged;
         final currentLat = data['liveLatitude'] ?? data['latitude'];
         final currentLon = data['liveLongitude'] ?? data['longitude'];
-        final locationName = data['liveLocationName'] ?? data['location'] ?? 'N/A';
+        final locationName =
+            data['liveLocationName'] ?? data['location'] ?? 'N/A';
 
         return Scaffold(
           backgroundColor: const Color(0xFFF5F7FA),
@@ -118,7 +124,7 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 100),
-                
+
                 // Status Banner with Gradient
                 Container(
                   width: double.infinity,
@@ -175,18 +181,25 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
                                   _getStatusColor(data['status']),
-                                  _getStatusColor(data['status']).withOpacity(0.8),
+                                  _getStatusColor(
+                                    data['status'],
+                                  ).withOpacity(0.8),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                  color: _getStatusColor(data['status']).withOpacity(0.4),
+                                  color: _getStatusColor(
+                                    data['status'],
+                                  ).withOpacity(0.4),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -209,70 +222,67 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
                 ),
 
                 // Student Information Section
-                _buildSection(
-                  'Student Information',
-                  [
-                    _buildDetailRow('Name', data['studentName'] ?? 'N/A'),
-                    _buildDetailRow('Student ID', data['studentId'] ?? 'N/A'),
-                    _buildDetailRow('Phone', data['studentPhone'] ?? 'N/A'),
-                    _buildDetailRow('Email', data['studentEmail'] ?? 'N/A'),
-                    _buildDetailRow('Department', data['department'] ?? 'N/A'),
-                    _buildDetailRow('Session', data['session'] ?? 'N/A'),
-                  ],
-                ),
+                _buildSection('Student Information', [
+                  _buildDetailRow('Name', data['studentName'] ?? 'N/A'),
+                  _buildDetailRow('Student ID', data['studentId'] ?? 'N/A'),
+                  _buildDetailRow('Phone', data['studentPhone'] ?? 'N/A'),
+                  _buildDetailRow('Email', data['studentEmail'] ?? 'N/A'),
+                  _buildDetailRow('Department', data['department'] ?? 'N/A'),
+                  _buildDetailRow('Session', data['session'] ?? 'N/A'),
+                ]),
 
                 // Location Information
-                _buildSection(
-                  'Location Information',
-                  [
-                    _buildDetailRow('Location Name', locationName),
-                    if (currentLat != null && currentLon != null)
-                      _buildDetailRow(
-                        'GPS Coordinates',
-                        '$currentLat, $currentLon',
-                      ),
-                    if (currentLat != null && currentLon != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF4285F4), Color(0xFF2563EB)],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF4285F4).withOpacity(0.4),
-                                blurRadius: 12,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
+                _buildSection('Location Information', [
+                  _buildDetailRow('Location Name', locationName),
+                  if (currentLat != null && currentLon != null)
+                    _buildDetailRow(
+                      'GPS Coordinates',
+                      '$currentLat, $currentLon',
+                    ),
+                  if (currentLat != null && currentLon != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF4285F4), Color(0xFF2563EB)],
                           ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: _openLatestLocationOnMaps,
-                              borderRadius: BorderRadius.circular(14),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.map_rounded,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF4285F4).withOpacity(0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _openLatestLocationOnMaps,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                    const SizedBox(width: 12),
-                                    const Text(
+                                    child: const Icon(
+                                      Icons.map_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Flexible(
+                                    child: Text(
                                       'View Location on Google Maps',
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 15,
@@ -280,39 +290,36 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
                                         letterSpacing: 0.5,
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ]),
 
                 // Alert Metadata
-                _buildSection(
-                  'Alert Information',
-                  [
+                _buildSection('Alert Information', [
+                  _buildDetailRow(
+                    'Alert Time',
+                    _formatTime(data['timestamp'] ?? data['receivedAt']),
+                  ),
+                  _buildDetailRow('Alert ID', widget.alertId),
+                  if (data['respondedByName'] != null)
+                    _buildDetailRow('Responded By', data['respondedByName']),
+                  if (data['respondedAt'] != null)
                     _buildDetailRow(
-                      'Alert Time',
-                      _formatTime(data['timestamp'] ?? data['receivedAt']),
+                      'Response Time',
+                      _formatTime(data['respondedAt']),
                     ),
+                  if (data['rejectionReason'] != null)
                     _buildDetailRow(
-                      'Alert ID',
-                      widget.alertId,
+                      'Rejection Reason',
+                      data['rejectionReason'],
                     ),
-                    if (data['respondedByName'] != null)
-                      _buildDetailRow('Responded By', data['respondedByName']),
-                    if (data['respondedAt'] != null)
-                      _buildDetailRow(
-                        'Response Time',
-                        _formatTime(data['respondedAt']),
-                      ),
-                    if (data['rejectionReason'] != null)
-                      _buildDetailRow('Rejection Reason', data['rejectionReason']),
-                  ],
-                ),
+                ]),
 
                 // Action Buttons
                 if (data['status'] == 'pending') ...[
@@ -436,9 +443,7 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
                   width: 1,
                 ),
               ),
-              child: Column(
-                children: children,
-              ),
+              child: Column(children: children),
             ),
           ],
         ),
@@ -533,9 +538,9 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
           .collection('proctorial_alerts')
           .doc(widget.alertId)
           .update({
-        'status': 'resolved',
-        'respondedAt': FieldValue.serverTimestamp(),
-      });
+            'status': 'resolved',
+            'respondedAt': FieldValue.serverTimestamp(),
+          });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -559,9 +564,9 @@ class _AlertDetailsPageState extends State<AlertDetailsPage> {
           .collection('proctorial_alerts')
           .doc(widget.alertId)
           .update({
-        'status': 'forwarded',
-        'forwardedAt': FieldValue.serverTimestamp(),
-      });
+            'status': 'forwarded',
+            'forwardedAt': FieldValue.serverTimestamp(),
+          });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

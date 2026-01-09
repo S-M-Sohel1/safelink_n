@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:safelink_n/core/constants/app_constants.dart';
 import 'package:shake/shake.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../presentation/home/controllers/alert_controller.dart';
@@ -36,10 +37,12 @@ class ShakeDetectionService {
   /// [shakeCountResetTime] - Time to reset shake count
   void startListening({
     required BuildContext context,
-    double shakeThresholdGravity = 1.53, // FR11: 15 m/s² = 1.53G
-    int minimumShakeCount = 2, // FR11: 3 shakes
-    int shakeSlopTimeMS = 2500, // FR11: 2.5 seconds (middle of 2-3s range)
-    int shakeCountResetTime = 3000,
+    double shakeThresholdGravity =
+        AppConstants.shakeThresholdGravity, // FR11: 15 m/s² = 1.53G
+    int minimumShakeCount = AppConstants.minimumShakeCount, // FR11: 3 shakes
+    int shakeSlopTimeMS = AppConstants
+        .shakeSlopTimeMS, // FR11: 2.5 seconds (middle of 2-3s range)
+    int shakeCountResetTime = AppConstants.shakeCountResetTime,
   }) {
     if (_isListening) {
       print('⚠️ Shake detection already running');
