@@ -118,16 +118,16 @@ class SmsEscalationService {
     await showDialog(
       context: _context!,
       barrierDismissible: false,
-      builder: (context) => _CountdownDialog(
+      builder: (dialogContext) => _CountdownDialog(
         alertId: alertId,
         onComplete: () async {
           print('📤 Send Now button pressed or countdown completed');
-          Navigator.of(context).pop();
+          // Don't pop here - caller handles it
           await _sendSmsToProctors(alertId);
         },
         onCancel: () {
           print('🚫 SMS escalation cancelled by user');
-          Navigator.of(context).pop();
+          // onCancel is only called after pop, so don't pop again
         },
       ),
     );
@@ -299,10 +299,10 @@ class _CountdownDialogState extends State<_CountdownDialog> {
         setState(() => _countdown--);
         print('⏱️ Countdown: $_countdown seconds remaining');
       } else {
-        print('⏱️ Countdown finished - calling onComplete()');
+        print('⏱️ Countdown finished - closing dialog and sending SMS');
         timer.cancel();
-        widget.onComplete();
-        // Don't call Navigator.pop() here - parent handles it
+        Navigator.of(context).pop(); // Pop dialog first
+        widget.onComplete(); // Then send SMS
       }
     });
   }
@@ -359,8 +359,8 @@ class _CountdownDialogState extends State<_CountdownDialog> {
         ElevatedButton(
           onPressed: () {
             _timer?.cancel();
-            widget.onComplete();
-            Navigator.of(context).pop();
+            Navigator.of(context).pop(); // Pop dialog first
+            widget.onComplete(); // Then send SMS (async)
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
