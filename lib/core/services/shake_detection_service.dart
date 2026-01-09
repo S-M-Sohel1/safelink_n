@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shake/shake.dart';
 import 'package:geolocator/geolocator.dart';
@@ -95,8 +96,33 @@ class ShakeDetectionService {
 
   /// Handle shake detection event
   void _onShakeDetected(dynamic event) async {
-    print('🔔 SHAKE DETECTED! Triggering SOS alert...');
+    print('🔔 SHAKE DETECTED! Showing confirmation countdown...');
 
+    if (_context == null || !_context!.mounted) {
+      print('⚠️ Cannot send alert - context not available');
+      return;
+    }
+
+    // Show countdown confirmation dialog
+    await showDialog(
+      context: _context!,
+      barrierDismissible: false,
+      builder: (dialogContext) => _ShakeConfirmationDialog(
+        onConfirm: () async {
+          print('✅ User confirmed shake alert or countdown finished');
+          // Don't pop here - caller handles it
+          await _sendShakeAlert();
+        },
+        onCancel: () {
+          print('🚫 User cancelled shake alert');
+          // onCancel is only called after pop, so don't pop again
+        },
+      ),
+    );
+  }
+
+  /// Send shake alert after confirmation
+  Future<void> _sendShakeAlert() async {
     if (_context == null || !_context!.mounted) {
       print('⚠️ Cannot send alert - context not available');
       return;
@@ -162,16 +188,12 @@ class ShakeDetectionService {
         session: profileController.session,
       );
 
-      // Show success notification
-      if (_context != null && _context!.mounted) {
-        _showSuccessPopup(_context!);
-      }
-
+      // No success popup - countdown dialog was enough confirmation
       print('✅ Shake-triggered SOS alert sent successfully!');
     } catch (e) {
       print('❌ Error sending shake alert: $e');
 
-      // Show error notification
+      // Show error notification only if something goes wrong
       if (_context != null && _context!.mounted) {
         _showErrorPopup(_context!, e.toString());
       }
@@ -269,5 +291,118 @@ class ShakeDetectionService {
   /// Dispose and cleanup
   void dispose() {
     stopListening();
+  }
+}
+
+/// Countdown confirmation dialog for shake alert
+class _ShakeConfirmationDialog extends StatefulWidget {
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _ShakeConfirmationDialog({
+    required this.onConfirm,
+    required this.onCancel,
+  });
+
+  @override
+  State<_ShakeConfirmationDialog> createState() =>
+      _ShakeConfirmationDialogState();
+}
+
+class _ShakeConfirmationDialogState extends State<_ShakeConfirmationDialog> {
+  int _countdown = 10;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    print('⏱️ Shake confirmation dialog: Starting 10-second countdown');
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_countdown > 0) {
+        setState(() => _countdown--);
+        print('⏱️ Shake countdown: $_countdown seconds remaining');
+      } else {
+        print('⏱️ Shake countdown finished - sending alert');
+        timer.cancel();
+        Navigator.of(context).pop(); // Pop dialog first
+        widget.onConfirm(); // Then send alert
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: const [
+          Icon(Icons.vibration, color: Colors.orange, size: 28),
+          SizedBox(width: 10),
+          Text('Shake Detected!'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Emergency alert will be sent.',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 10),
+          Text(
+            'Proctorial body will be notified.',
+            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Sending alert in $_countdown seconds...',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.orange,
+            ),
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Cancel if this was a mistake.',
+            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            _timer?.cancel();
+            Navigator.of(context).pop();
+            widget.onCancel();
+          },
+          child: Text('Cancel', style: TextStyle(color: Colors.red)),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            _timer?.cancel();
+            Navigator.of(context).pop(); // Pop dialog first
+            widget.onConfirm(); // Then send alert (async)
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: Text('Send Now'),
+        ),
+      ],
+    );
   }
 }
