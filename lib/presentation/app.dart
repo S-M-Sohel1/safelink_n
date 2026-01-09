@@ -84,17 +84,8 @@ class SafeLinkApp extends StatelessWidget {
                   ModalRoute.of(context)?.settings.arguments
                       as Map<String, dynamic>?;
               final isStaffView = args?['isStaffView'] ?? false;
-              final latitude = args?['latitude'] as double?;
-              final longitude = args?['longitude'] as double?;
-              final title = isStaffView
-                  ? 'Student Location'
-                  : 'Your Location';
-              return MapScreen(
-                title: title,
-                isStaffView: isStaffView,
-                latitude: latitude,
-                longitude: longitude,
-              );
+              final title = isStaffView ? 'Student Location' : 'Your Location';
+              return MapScreen(title: title, isStaffView: isStaffView);
             },
             '/sos': (context) => const StudentProfileScreen(),
             AppRoutes.studentProfile: (context) => const StudentProfileScreen(),
