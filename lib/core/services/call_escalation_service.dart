@@ -73,8 +73,12 @@ class CallEscalationService {
         );
         print('   Context still available: ${_context != null}');
         print('   Context still mounted: ${_context?.mounted}');
-        await _triggerCallEscalation(alertId);
+
+        // Remove timer immediately when dialog appears (not after calls complete)
         _activeTimers.remove(alertId);
+        print('✅ Timer stopped for alert $alertId');
+
+        await _triggerCallEscalation(alertId);
       },
     );
   }
@@ -115,15 +119,16 @@ class CallEscalationService {
     await showDialog(
       context: _context!,
       barrierDismissible: false,
-      builder: (context) => _CallCountdownDialog(
+      builder: (dialogContext) => _CallCountdownDialog(
         alertId: alertId,
         onComplete: () async {
           print('📞 User confirmed or countdown finished - initiating calls');
+          // Don't pop here - caller handles it
           await _initiateCallsToProctors(alertId);
         },
         onCancel: () {
           print('🚫 User cancelled call escalation');
-          Navigator.of(context).pop();
+          // onCancel is only called after pop, so don't pop again
         },
       ),
     );

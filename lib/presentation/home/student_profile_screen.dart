@@ -22,7 +22,7 @@ class StudentProfileScreen extends StatefulWidget {
 }
 
 class _StudentProfileScreenState extends State<StudentProfileScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _sending = false;
   String _locationStatus = 'Finding your location...';
   int _currentIndex = 0;
@@ -30,6 +30,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   StreamSubscription<Position>? _liveLocationSub;
   String? _selectedBuilding;
   String? _selectedFloor;
+  Timer? _volumeResumeTimer; // Timer for delayed volume button resume
 
   // Building list
   final List<String> _buildings = [
@@ -75,6 +76,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   @override
   void initState() {
     super.initState();
+
+    // Add lifecycle observer to detect app resume
+    WidgetsBinding.instance.addObserver(this);
+
     _initializeLocation();
     // Initialize real-time listener for alerts
     AlertController.instance.initializeRealtimeListener();
@@ -92,8 +97,36 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       if (mounted) {
         SmsEscalationService.instance.setContext(context);
         CallEscalationService.instance.setContext(context);
+        VolumeButtonSosService.instance.setContext(context);
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.resumed) {
+      print('📱 App resumed - checking volume button service state');
+
+      // Check if volume service is listening but paused
+      if (VolumeButtonSosService.instance.isListening &&
+          VolumeButtonSosService.instance.isPaused) {
+        print('⏰ Volume buttons paused - scheduling resume in 30 seconds');
+
+        // Cancel any existing timer
+        _volumeResumeTimer?.cancel();
+
+        // Resume after 30 seconds to avoid false triggers from call UI
+        _volumeResumeTimer = Timer(Duration(seconds: 30), () {
+          if (VolumeButtonSosService.instance.isListening &&
+              VolumeButtonSosService.instance.isPaused) {
+            print('▶️ Auto-resuming volume buttons after app resume');
+            VolumeButtonSosService.instance.resume();
+          }
+        });
+      }
+    }
   }
 
   /// Set Firebase auth token for AlertController
@@ -140,12 +173,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
   @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+
+    // Cancel volume resume timer
+    _volumeResumeTimer?.cancel();
+
     _liveLocationSub?.cancel();
     _pulseController.dispose();
     // Stop shake detection when leaving student profile
     ShakeDetectionService.instance.stopListening();
     print('✅ Shake detection stopped on dispose');
     // Stop volume button SOS detection
+    VolumeButtonSosService.instance.clearContext();
     VolumeButtonSosService.instance.stopListening();
     print('✅ Volume button SOS stopped on dispose');
     // Clear SMS escalation context and cancel timers
