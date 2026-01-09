@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../config/routes/app_routes.dart';
 import '../../core/constants/app_colors.dart';
 import 'controllers/auth_controller.dart';
 import '../../core/utils/validators.dart';
+import '../../core/services/auth_state_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -11,7 +13,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -41,9 +44,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     List<String>? allowed;
@@ -52,15 +55,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     if (_role == 'Security Body') allowed = ['security'];
 
     final success = await _auth.login(email, password, allowedRoles: allowed);
-    
+
     if (!mounted) return;
     setState(() => _isLoading = false);
-    
+
     if (success) {
+      // Save login state to SharedPreferences
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await AuthStateService.instance.saveLoginState(
+          uid: user.uid,
+          email: user.email ?? email,
+          role: _role == 'Student'
+              ? 'student'
+              : _role == 'Proctorial Body'
+              ? 'proctorial'
+              : 'security',
+        );
+      }
+
+      // Navigate based on role
       if (_role == 'Student') {
         Navigator.pushReplacementNamed(context, AppRoutes.studentProfile);
       } else {
-        Navigator.pushReplacementNamed(context, AppRoutes.home, arguments: _role.toLowerCase());
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.home,
+          arguments: _role.toLowerCase(),
+        );
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -69,12 +91,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             children: [
               Icon(Icons.error_outline, color: Colors.white),
               SizedBox(width: 12),
-              Expanded(child: Text('Login failed. Please check your credentials.')),
+              Expanded(
+                child: Text('Login failed. Please check your credentials.'),
+              ),
             ],
           ),
           backgroundColor: AppColors.danger,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
@@ -126,7 +152,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 24),
-                
+
                 // University Logo
                 Container(
                   width: 100,
@@ -157,9 +183,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 28),
-                
+
                 // Welcome back heading
                 Text(
                   'Welcome back',
@@ -170,9 +196,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // Subtitle
                 Text(
                   'Sign in to continue to SafeLink NSTU',
@@ -183,9 +209,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Form Container
                 Container(
                   decoration: BoxDecoration(
@@ -215,14 +241,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             letterSpacing: 0.3,
                           ),
                         ),
-                        
+
                         const SizedBox(height: 8),
-                        
+
                         // Role selector
                         _buildRoleSelector(),
-                        
+
                         const SizedBox(height: 24),
-                        
+
                         // Email field
                         Text(
                           'Email',
@@ -233,9 +259,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             letterSpacing: 0.3,
                           ),
                         ),
-                        
+
                         const SizedBox(height: 8),
-                        
+
                         _buildTextField(
                           controller: _emailController,
                           hint: 'Enter your email',
@@ -246,15 +272,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               return 'Enter a valid email';
                             }
                             final e = v.trim().toLowerCase();
-                            if (_role == 'Student' && !e.endsWith('@student.nstu.edu.bd')) {
+                            if (_role == 'Student' &&
+                                !e.endsWith('@student.nstu.edu.bd')) {
                               return 'Use institutional email (@student.nstu.edu.bd)';
                             }
                             return null;
                           },
                         ),
-                        
+
                         const SizedBox(height: 20),
-                        
+
                         // Password label
                         Text(
                           'Password',
@@ -265,9 +292,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             letterSpacing: 0.3,
                           ),
                         ),
-                        
+
                         const SizedBox(height: 8),
-                        
+
                         // Password field
                         _buildTextField(
                           controller: _passwordController,
@@ -283,23 +310,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               size: 20,
                             ),
                             onPressed: () {
-                              setState(() => _obscurePassword = !_obscurePassword);
+                              setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              );
                             },
                           ),
-                          validator: (v) => (v == null || !Validators.isSixDigitPassword(v))
+                          validator: (v) =>
+                              (v == null || !Validators.isSixDigitPassword(v))
                               ? 'Password must be at least 6 chars (uppercase, lowercase, number)'
                               : null,
                         ),
-                        
+
                         const SizedBox(height: 16),
-                        
+
                         // Forgot password
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () => Navigator.pushNamed(context, AppRoutes.forgotPassword),
+                            onPressed: () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.forgotPassword,
+                            ),
                             style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 0,
+                                vertical: 4,
+                              ),
                             ),
                             child: Text(
                               'Forgot password?',
@@ -311,14 +347,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                           ),
                         ),
-                        
+
                         const SizedBox(height: 24),
-                        
+
                         // Login button
                         _buildLoginButton(),
-                        
+
                         const SizedBox(height: 20),
-                        
+
                         // Sign up link (for students only)
                         if (_role == 'Student')
                           Center(
@@ -333,7 +369,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                                 ),
                                 GestureDetector(
-                                  onTap: () => _showLocationPermissionDialog(context),
+                                  onTap: () =>
+                                      _showLocationPermissionDialog(context),
                                   child: Text(
                                     'Sign up',
                                     style: const TextStyle(
@@ -350,7 +387,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
               ],
             ),
@@ -365,10 +402,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1.5,
-        ),
+        border: Border.all(color: Colors.grey.shade200, width: 1.5),
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withOpacity(0.08),
@@ -381,32 +415,48 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         value: _role,
         decoration: InputDecoration(
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
           prefixIcon: const Icon(
             Icons.group_outlined,
             color: Color(0xFF1E5BA8),
             size: 22,
           ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 48,
+            minHeight: 48,
+          ),
         ),
         dropdownColor: Colors.white,
         borderRadius: BorderRadius.circular(8),
         items: const [
           DropdownMenuItem(
             value: 'Student',
-            child: Text('Student', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+            child: Text(
+              'Student',
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+            ),
           ),
           DropdownMenuItem(
             value: 'Proctorial Body',
-            child: Text('Proctorial Body', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+            child: Text(
+              'Proctorial Body',
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+            ),
           ),
           DropdownMenuItem(
             value: 'Security Body',
-            child: Text('Security Body', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+            child: Text(
+              'Security Body',
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+            ),
           ),
         ],
         onChanged: (v) => setState(() => _role = v ?? 'Student'),
-        validator: (v) => (v == null || v.isEmpty) ? 'Please select your role' : null,
+        validator: (v) =>
+            (v == null || v.isEmpty) ? 'Please select your role' : null,
       ),
     );
   }
@@ -441,11 +491,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         style: const TextStyle(fontSize: 14, color: Color(0xFF1E1E1E)),
         decoration: InputDecoration(
           hintText: hint,
-          prefixIcon: Icon(prefixIcon, color: const Color(0xFF1E5BA8), size: 22),
-          prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          prefixIcon: Icon(
+            prefixIcon,
+            color: const Color(0xFF1E5BA8),
+            size: 22,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 48,
+            minHeight: 48,
+          ),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 14,
+          ),
           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
           errorStyle: const TextStyle(fontSize: 12),
         ),
@@ -502,9 +562,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       barrierDismissible: false,
       builder: (dialogCtx) {
         final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
-        
+
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
           backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
           child: Padding(
             padding: const EdgeInsets.all(28.0),
@@ -536,9 +598,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 Text(
                   'Enable Location Access',
                   style: TextStyle(
@@ -549,9 +611,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -577,9 +639,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 28),
-                
+
                 // Buttons
                 Row(
                   children: [
@@ -601,10 +663,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 SnackBar(
                                   content: const Row(
                                     children: [
-                                      Icon(Icons.info_outline, color: Colors.white),
+                                      Icon(
+                                        Icons.info_outline,
+                                        color: Colors.white,
+                                      ),
                                       SizedBox(width: 10),
                                       Expanded(
-                                        child: Text('Location permission is required to sign up'),
+                                        child: Text(
+                                          'Location permission is required to sign up',
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -623,7 +690,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 child: Text(
                                   'Deny',
                                   style: TextStyle(
-                                    color: isDark ? Colors.white70 : Colors.grey[700],
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.grey[700],
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                   ),
@@ -634,9 +703,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(width: 12),
-                    
+
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -657,7 +726,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           child: InkWell(
                             onTap: () {
                               Navigator.pop(dialogCtx);
-                              Navigator.pushReplacementNamed(context, AppRoutes.signup);
+                              Navigator.pushReplacementNamed(
+                                context,
+                                AppRoutes.signup,
+                              );
                             },
                             borderRadius: BorderRadius.circular(14),
                             child: const Padding(
